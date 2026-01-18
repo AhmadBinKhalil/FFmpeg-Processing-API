@@ -11,8 +11,11 @@ A robust, FastAPI-based service designed to process video and audio files dynami
 - **Multiple Inputs**: Support for processing multiple input files simultaneously.
 - **Bundled Assets**: Includes bundled fonts (e.g., OpenSans) for easy text overlays.
 - **Safety Checks**: Basic validation to prevent common command injection attacks (see Security section).
-- **Docker Ready**: Fully containerized for easy deployment.
+- **Docker Ready**: Fully containerized for easy deployment (runs in POSIX/Linux mode).
 - **Auto-Cleanup**: Temporary sessions are automatically cleaned up after processing.
+
+> [!TIP]
+> **Docker/Linux Users**: When sending commands via `curl` or valid shell strings, ensure you escape characters according to POSIX standards. Newlines can usually be passed as `\n` or `\\\n` depending on your client's quoting.
 
 ## 🛠️ Setup & Installation
 
@@ -152,6 +155,12 @@ Failed requests return standard HTTP error codes. Successful processing returns 
 **15. Fade In (Video Only, 1s)**
 ```bash
 -i {input} -vf "fade=t=in:st=0:d=1" -c:a copy {output}
+```
+
+**16. Darkened Background with Multiline Text**
+*Uses `eq` to darken video and `drawtext` with `\n` for line breaks.*
+```bash
+-i {input} -vf "eq=brightness=-0.2, drawtext=fontfile={font}:text='Line 1\\nLine 2':fontcolor=white:fontsize=h/30:x=(w-text_w)/2:y=(h-text_h)/2" -an -c:v libx264 -pix_fmt yuv420p {output}
 ```
 
 ## ⚠️ Security Considerations

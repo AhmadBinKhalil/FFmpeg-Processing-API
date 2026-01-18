@@ -85,11 +85,10 @@ class FFmpegProcessor:
         if remaining_placeholders:
             raise ValueError(f"Unreplaced placeholders in command: {remaining_placeholders}")
         
-        # Parse into arguments - use posix=False to preserve Windows backslashes
+        # Parse into arguments - use posix=True for correct escaping in Linux/Docker
         try:
-            args = shlex.split(command, posix=False)
-            # Remove surrounding quotes that shlex preserves in non-posix mode
-            args = [arg.strip('"').strip("'") for arg in args]
+            args = shlex.split(command, posix=True)
+            # posix=True automatically handles quote stripping and escapes
         except ValueError as e:
             raise ValueError(f"Invalid command syntax: {e}")
         
