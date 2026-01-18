@@ -80,14 +80,78 @@ Failed requests return standard HTTP error codes. Successful processing returns 
 -i {input} -vf drawtext=fontfile={font}:text='MyWatermark':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=(h-text_h)/2 -c:v libx264 {output}
 ```
 
-**2. Convert to MP4 (Fast)**
+**2. Convert to MP4 (Fast Preset)**
 ```bash
 -i {input} -c:v libx264 -preset fast {output}
 ```
 
-**3. Extract Audio**
+**3. Extract Audio (MP3)**
 ```bash
 -i {input} -vn -acodec mp3 {output}
+```
+*(Note: set `output_extension` to `.mp3`)*
+
+**4. Resize to 720p**
+```bash
+-i {input} -vf scale=-1:720 -c:v libx264 {output}
+```
+
+**5. Trim Video (Start at 00:00:10, Duration 5s)**
+```bash
+-i {input} -ss 00:00:10 -t 5 -c:v libx264 -c:a copy {output}
+```
+
+**6. Create GIF (Scale 320px width)**
+```bash
+-i {input} -vf "fps=10,scale=320:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" -loop 0 {output}
+```
+*(Note: set `output_extension` to `.gif`)*
+
+**7. Remove Audio (Mute)**
+```bash
+-i {input} -c:v copy -an {output}
+```
+
+**8. Increase Volume (150%)**
+```bash
+-i {input} -filter:a "volume=1.5" -c:v copy {output}
+```
+
+**9. Grayscale Video**
+```bash
+-i {input} -vf hue=s=0 -c:a copy {output}
+```
+
+**10. Rotate 90 Degrees Clockwise**
+```bash
+-i {input} -vf "transpose=1" -c:a copy {output}
+```
+
+**11. Compress Video (CRF 28)**
+```bash
+-i {input} -vcodec libx264 -crf 28 {output}
+```
+
+**12. Merge Video and Audio (Two Inputs)**
+*Requires uploading video as file #1 and audio as file #2*
+```bash
+-i {input} -i {input2} -c:v copy -c:a aac -map 0:v:0 -map 1:a:0 {output}
+```
+
+**13. Generate Thumbnail (at 5 seconds)**
+```bash
+-i {input} -ss 00:00:05 -vframes 1 {output}
+```
+*(Note: set `output_extension` to `.jpg`)*
+
+**14. Speed Up Video (2x)**
+```bash
+-i {input} -filter:v "setpts=0.5*PTS" -filter:a "atempo=2.0" {output}
+```
+
+**15. Fade In (Video Only, 1s)**
+```bash
+-i {input} -vf "fade=t=in:st=0:d=1" -c:a copy {output}
 ```
 
 ## ⚠️ Security Considerations
