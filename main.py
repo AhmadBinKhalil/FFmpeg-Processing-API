@@ -119,7 +119,8 @@ async def root():
 async def process_files(
     files: List[UploadFile] = File(..., description="Files to process"),
     command: str = Form(..., description="FFmpeg command template"),
-    output_extension: Optional[str] = Form(None, description="Output file extension (auto-detected if not provided)")
+    output_extension: Optional[str] = Form(None, description="Output file extension (auto-detected if not provided)"),
+    execution_mode: str = Form("auto", description="Execution mode: 'auto', 'json', or 'shell'")
 ):
     """
     Process uploaded files with FFmpeg.
@@ -128,6 +129,11 @@ async def process_files(
     - Use `{input}` for single file input, or `{input1}`, `{input2}`, etc. for multiple files
     - Use `{output}` for the output file path
     - Use `{font}` for the bundled OpenSans font path
+    
+    **Execution Modes:**
+    - `auto` (default): Attempts to parse JSON; falls back to shell string.
+    - `json`: Forces JSON parsing. Errors if invalid JSON.
+    - `shell`: Forces shell string parsing.
     
     **Example Commands:**
     - Add watermark: `-i {input} -vf drawtext=fontfile={font}:text='Text':fontcolor=white:fontsize=48 {output}`
@@ -192,17 +198,36 @@ async def process_files(
             except FileNotFoundError as e:
                 raise HTTPException(status_code=500, detail=str(e))
         
-        # Parse command: check if it's a JSON list (for direct subprocess execution)
+        # Parse command based on execution_mode
         parsed_command = command
-        try:
-            if command.strip().startswith("["):
-                possible_list = json.loads(command)
-                if isinstance(possible_list, list):
-                    parsed_command = possible_list
-                    print("DEBUG: Command parsed as JSON list (Subprocess Mode)")
-        except json.JSONDecodeError as e:
-            print(f"DEBUG: JSON decode failed ({e}). Falling back to Shell Mode.")
-            pass  # Not valid JSON, treat as string (Shell Mode)
+        mode = execution_mode.lower()
+        
+        if mode == "json":
+            # Force JSON parsing
+            try:
+                parsed_command = json.loads(command)
+                if not isinstance(parsed_command, list):
+                    raise HTTPException(status_code=400, detail="Command must be a JSON list when mode is 'json'")
+                print("DEBUG: Force JSON mode active")
+            except json.JSONDecodeError as e:
+                raise HTTPException(status_code=400, detail=f"Invalid JSON command: {e}")
+                
+        elif mode == "shell":
+            # Force Shell parsing (treat as string)
+            print("DEBUG: Force Shell mode active")
+            # parsed_command remains as string
+            
+        else: # auto
+            # Auto-detect
+            try:
+                if command.strip().startswith("["):
+                    possible_list = json.loads(command)
+                    if isinstance(possible_list, list):
+                        parsed_command = possible_list
+                        print("DEBUG: Auto-detected JSON list (Subprocess Mode)")
+            except json.JSONDecodeError as e:
+                print(f"DEBUG: JSON decode failed ({e}). Falling back to Shell Mode.")
+                pass
             
         # Parse and validate command
         try:
@@ -252,7 +277,8 @@ async def process_files(
 async def process_files_json(
     files: List[UploadFile] = File(..., description="Files to process"),
     command: str = Form(..., description="FFmpeg command template"),
-    output_extension: Optional[str] = Form(None, description="Output file extension")
+    output_extension: Optional[str] = Form(None, description="Output file extension"),
+    execution_mode: str = Form("auto", description="Execution mode: 'auto', 'json', or 'shell'")
 ):
     """
     Process files and return result info as JSON (without the file content).
@@ -285,16 +311,36 @@ async def process_files_json(
             except FileNotFoundError as e:
                 raise HTTPException(status_code=500, detail=str(e))
         
-        # Parse command: check if it's a JSON list (for direct subprocess execution)
+        # Parse command based on execution_mode
         parsed_command = command
-        try:
-            if command.strip().startswith("["):
-                possible_list = json.loads(command)
-                if isinstance(possible_list, list):
-                    parsed_command = possible_list
-        except json.JSONDecodeError as e:
-            print(f"DEBUG: JSON decode failed ({e}). Falling back to Shell Mode.")
-            pass
+        mode = execution_mode.lower()
+        
+        if mode == "json":
+            # Force JSON parsing
+            try:
+                parsed_command = json.loads(command)
+                if not isinstance(parsed_command, list):
+                    raise HTTPException(status_code=400, detail="Command must be a JSON list when mode is 'json'")
+                print("DEBUG: Force JSON mode active")
+            except json.JSONDecodeError as e:
+                raise HTTPException(status_code=400, detail=f"Invalid JSON command: {e}")
+                
+        elif mode == "shell":
+            # Force Shell parsing (treat as string)
+            print("DEBUG: Force Shell mode active")
+            # parsed_command remains as string
+            
+        else: # auto
+            # Auto-detect
+            try:
+                if command.strip().startswith("["):
+                    possible_list = json.loads(command)
+                    if isinstance(possible_list, list):
+                        parsed_command = possible_list
+                        print("DEBUG: Auto-detected JSON list (Subprocess Mode)")
+            except json.JSONDecodeError as e:
+                print(f"DEBUG: JSON decode failed ({e}). Falling back to Shell Mode.")
+                pass
 
         try:
             args = ffmpeg_processor.parse_command(

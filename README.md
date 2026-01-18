@@ -74,6 +74,10 @@ Failed requests return standard HTTP error codes. Successful processing returns 
     - **String**: Executed via system shell (e.g., `-i {input} ...`).
     - **JSON List**: Executed directly via subprocess (e.g., `["-i", "{input}", ...]`). Recommended for complex text/escaping.
 - `output_extension`: (Optional) Desired output extension (e.g., `.mp4`, `.mp3`).
+- `execution_mode`: (Optional) Parsing strategy.
+    - `auto` (default): Tries to parse as JSON, falls back to shell string.
+    - `json`: Forces JSON parsing (errors `400` if invalid).
+    - `shell`: Forces shell string execution.
 
 **Command Placeholders:**
 - `{input}`: The first uploaded file.
