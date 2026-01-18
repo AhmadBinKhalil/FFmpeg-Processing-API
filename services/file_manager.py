@@ -7,8 +7,9 @@ import os
 import uuid
 import shutil
 import tempfile
+import base64
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Any
 from fastapi import UploadFile
 
 
@@ -150,3 +151,53 @@ class FileManager:
             safe_name = f"file_{uuid.uuid4().hex[:8]}"
         
         return safe_name
+
+    def save_base64_files(
+        self,
+        files_data: List[Dict[str, str]],
+        session_dir: str
+    ) -> Dict[str, str]:
+        """
+        Save base64 encoded files to the session directory.
+
+        Args:
+            files_data: List of dicts [{"filename": "...", "content": "base64..."}]
+            session_dir: Directory to save files to.
+
+        Returns:
+            Dictionary mapping placeholder names to file paths.
+        """
+        input_files = {}
+
+        for i, file_obj in enumerate(files_data):
+            filename = file_obj.get("filename")
+            content_b64 = file_obj.get("content")
+
+            if not filename or not content_b64:
+                continue
+
+            # Sanitize filename
+            safe_filename = self._sanitize_filename(filename)
+            file_path = os.path.join(session_dir, safe_filename)
+
+            # Decode and save
+            try:
+                # Handle potential header "data:image/png;base64,"
+                if "," in content_b64:
+                    content_b64 = content_b64.split(",")[1]
+
+                file_content = base64.b64decode(content_b64)
+                with open(file_path, "wb") as f:
+                    f.write(file_content)
+            except Exception as e:
+                raise ValueError(f"Failed to decode base64 file '{filename}': {e}")
+
+            # Map to placeholder names
+            if len(files_data) == 1:
+                input_files["input"] = file_path
+            else:
+                input_files[f"input{i + 1}"] = file_path
+                if i == 0:
+                    input_files["input"] = file_path
+
+        return input_files

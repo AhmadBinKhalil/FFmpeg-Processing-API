@@ -273,6 +273,121 @@ async def process_files(
         file_manager.cleanup_session(session_dir)
 
 
+@app.post("/process-base64")
+async def process_files_base64(request: Base64ProcessRequest):
+    """
+    Process files provided as Base64 strings.
+    Accepts a pure JSON payload.
+    """
+    if not request.files:
+        raise HTTPException(status_code=400, detail="No files provided")
+
+    session_dir = file_manager.create_session_dir()
+    
+    try:
+        # Save base64 files
+        files_data = [{"filename": f.filename, "content": f.content} for f in request.files]
+        try:
+            input_files = file_manager.save_base64_files(files_data, session_dir)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+            
+        # Determine output extension
+        ext = None
+        if request.output_extension:
+            clean_ext = request.output_extension.lower().strip().lstrip(".")
+            if clean_ext in VALID_EXTENSIONS:
+                ext = f".{clean_ext}"
+        
+        command_template = request.command
+        # If command is list, join for detection logic (list is safer but detection needs str sometimes)
+        # Actually detection logic takes str. If list, we might just default to mp4 or check list items.
+        # But detection logic is simple regex. Using str(command_template) might be enough.
+        detect_source = str(command_template) if isinstance(command_template, list) else command_template
+        
+        if not ext:
+            ext = ffmpeg_processor.detect_output_extension(detect_source)
+            
+        output_path = file_manager.create_output_path(session_dir, ext)
+        
+        # Handle Font
+        # Note: We need command string to check for {font} placeholder.
+        # If command is list, check all items.
+        has_font = False
+        if isinstance(command_template, list):
+             has_font = any("{font}" in arg for arg in command_template)
+        else:
+             has_font = "{font}" in command_template
+             
+        session_font_path = None
+        if has_font:
+            try:
+                session_font_path = file_manager.copy_font_to_session(DEFAULT_FONT, session_dir)
+            except FileNotFoundError as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        # Parsing Logic (Reuse execution_mode logic)
+        parsed_command = command_template
+        mode = request.execution_mode.lower()
+        
+        if mode == "json":
+             if not isinstance(parsed_command, list):
+                  # If user sent string but requested json mode, try to parse
+                  try:
+                       parsed_command = json.loads(parsed_command)
+                       if not isinstance(parsed_command, list):
+                            raise HTTPException(status_code=400, detail="Command must be a JSON list when mode is 'json'")
+                  except (json.JSONDecodeError, TypeError):
+                       raise HTTPException(status_code=400, detail="Command must be a valid JSON list when mode is 'json'")
+        elif mode == "shell":
+             # Force string
+             if isinstance(parsed_command, list):
+                  # If user sent list but wants shell, we can't easily convert back safely?
+                  # Actually usually they send string for shell.
+                  # If they sent list via JSON, and request shell, we probably should join it? 
+                  # Or just fail. Let's assume they sent the right type.
+                  pass
+             print("DEBUG: Force Shell mode active")
+        else: # auto
+             # If it came as list in JSON, it IS list.
+             if isinstance(parsed_command, list):
+                  print("DEBUG: Auto-detected JSON list (from Request Body)")
+             # If it came as string, try to parse
+             elif isinstance(parsed_command, str) and parsed_command.strip().startswith("["):
+                  try:
+                       parsed_command = json.loads(parsed_command)
+                       print("DEBUG: Auto-detected JSON list (parsed from string)")
+                  except json.JSONDecodeError:
+                       pass
+
+        # Execute
+        try:
+            args = ffmpeg_processor.parse_command(
+                parsed_command, input_files, output_path,
+                font_path=session_font_path
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+            
+        success, message, output_content = await ffmpeg_processor.execute(args, output_path)
+        
+        if not success:
+            # Cleanup on failure
+            file_manager.cleanup_session(session_dir)
+            raise HTTPException(status_code=500, detail=message)
+            
+        # Return file as a stream and cleanup after
+        return FileResponse(
+            output_path, 
+            filename=os.path.basename(output_path),
+            background=BackgroundTask(file_manager.cleanup_session, session_dir)
+        )
+            
+    except Exception as e:
+        # Emergency cleanup
+        file_manager.cleanup_session(session_dir)
+        raise e
+
 @app.post("/process-json")
 async def process_files_json(
     files: List[UploadFile] = File(..., description="Files to process"),

@@ -67,17 +67,34 @@ Control the application behavior using environment variables (or `.env` file):
 Failed requests return standard HTTP error codes. Successful processing returns the file as a downloadable attachment.
 
 ### Endpoint: `POST /process`
+*(Standard Multipart Upload)*
 
 **Parameters:**
 - `files`: One or more files to upload.
 - `command`: The FFmpeg command.
-    - **String**: Executed via system shell (e.g., `-i {input} ...`).
-    - **JSON List**: Executed directly via subprocess (e.g., `["-i", "{input}", ...]`). Recommended for complex text/escaping.
-- `output_extension`: (Optional) Desired output extension (e.g., `.mp4`, `.mp3`).
-- `execution_mode`: (Optional) Parsing strategy.
-    - `auto` (default): Tries to parse as JSON, falls back to shell string.
-    - `json`: Forces JSON parsing (errors `400` if invalid).
-    - `shell`: Forces shell string execution.
+    - **String**: Example: `-i {input} ...`
+    - **JSON List**: Example: `["-i", "{input}", ...]`
+- `output_extension`: (Optional) Desired output extension.
+- `execution_mode`: (Optional) `auto`, `json`, or `shell`.
+
+### Endpoint: `POST /process-base64`
+*(Pure JSON API - Great for n8n/Automation)*
+
+**Headers:** `Content-Type: application/json`
+
+**Body:**
+```json
+{
+  "files": [
+    { "filename": "video.mp4", "content": "BASE64_STRING..." }
+  ],
+  "command": ["-i", "{input}", "-c:v", "copy", "{output}"],
+  "execution_mode": "javascript",
+  "output_extension": ".mp4"
+}
+```
+
+**Returns:** Binary file stream (same as `/process`).
 
 **Command Placeholders:**
 - `{input}`: The first uploaded file.
