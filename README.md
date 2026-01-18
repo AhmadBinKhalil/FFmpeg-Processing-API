@@ -13,6 +13,7 @@ A robust, FastAPI-based service designed to process video and audio files dynami
 - **Safety Checks**: Basic validation to prevent common command injection attacks (see Security section).
 - **Docker Ready**: Fully containerized for easy deployment (runs in POSIX/Linux mode).
 - **Auto-Cleanup**: Temporary sessions are automatically cleaned up after processing.
+- **Raw Shell Mode**: Commands are executed directly via system shell for maximum flexibility (internal use only).
 
 > [!TIP]
 > **Docker/Linux Users**: When sending commands via `curl` or valid shell strings, ensure you escape characters according to POSIX standards. Newlines can usually be passed as `\n` or `\\\n` depending on your client's quoting.

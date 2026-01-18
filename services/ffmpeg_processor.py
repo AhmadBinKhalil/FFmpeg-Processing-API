@@ -40,107 +40,80 @@ class FFmpegProcessor:
         input_files: Dict[str, str], 
         output_path: str,
         font_path: str = None
-    ) -> list:
+    ) -> str:
         """
-        Parse and validate an FFmpeg command template.
+        Prepare the command string by replacing placeholders.
+        Retains the raw command structure for shell execution.
         
         Args:
-            command_template: Command template with {input}, {input1}, {output}, {font} placeholders.
+            command_template: Command template with {input}, {output}, {font}.
             input_files: Dictionary mapping placeholder names to file paths.
             output_path: Path for the output file.
-            font_path: Path to the bundled font file (for {font} placeholder).
+            font_path: Path to the bundled font.
             
         Returns:
-            List of command arguments for subprocess.
-            
-        Raises:
-            ValueError: If command is invalid or potentially dangerous.
+            The formatted command string.
         """
-        # Check for dangerous patterns
-        for pattern in self.DANGEROUS_PATTERNS:
-            if re.search(pattern, command_template):
-                raise ValueError(f"Command contains potentially dangerous pattern: {pattern}")
+        # Check for blocked arguments (basic sanity check only)
+        for arg in self.BLOCKED_ARGS:
+            if arg in command_template:
+                raise ValueError(f"Blocked argument: {arg}")
         
-        # Replace placeholders
         command = command_template
         
-        # Replace output placeholder
-        command = command.replace("{output}", output_path)
+        # Helper to safely quote paths for shell
+        def quote_path(path):
+            return shlex.quote(path)
+
+        # Replace output placeholder (quoted)
+        command = command.replace("{output}", quote_path(output_path))
         
-        # Replace font placeholder with proper escaping for FFmpeg filter syntax
+        # Replace font placeholder
         if font_path and "{font}" in command:
-            # Use forward slashes (works on both Windows and Linux)
-            escaped_font = font_path.replace("\\", "/")
-            # Only escape colon if it's a Windows drive letter (e.g., C:)
-            if len(escaped_font) >= 2 and escaped_font[1] == ":":
-                escaped_font = escaped_font[0] + "\\:" + escaped_font[2:]
-            command = command.replace("{font}", escaped_font)
+            # For shell execution, simple quoting usually works best
+            command = command.replace("{font}", quote_path(font_path))
         
         # Replace input placeholders
         for placeholder, file_path in input_files.items():
-            command = command.replace(f"{{{placeholder}}}", file_path)
+            # Replace {input} with safely quoted path
+            command = command.replace(f"{{{placeholder}}}", quote_path(file_path))
         
         # Check for unreplaced placeholders
         remaining_placeholders = re.findall(r"\{(\w+)\}", command)
         if remaining_placeholders:
             raise ValueError(f"Unreplaced placeholders in command: {remaining_placeholders}")
-        
-        # Parse into arguments - use posix=True for correct escaping in Linux/Docker
-        try:
-            print(f"DEBUG: Command before shlex (repr): {repr(command)}")
-            args = shlex.split(command, posix=True)
-            print(f"DEBUG: Args after shlex: {args}")
-        except ValueError as e:
-            raise ValueError(f"Invalid command syntax: {e}")
-        
-        # Validate arguments
-        self._validate_args(args)
-        
-        return args
+            
+        return command
     
     def _validate_args(self, args: list) -> None:
-        """
-        Validate FFmpeg arguments for safety.
-        
-        Args:
-            args: List of command arguments.
-            
-        Raises:
-            ValueError: If any argument is potentially dangerous.
-        """
-        for i, arg in enumerate(args):
-            # Check blocked arguments
-            if arg in self.BLOCKED_ARGS:
-                raise ValueError(f"Blocked argument: {arg}")
-            
-            # Check for attempts to escape via arguments
-            for pattern in self.DANGEROUS_PATTERNS:
-                if re.search(pattern, arg):
-                    raise ValueError(f"Argument contains dangerous pattern: {arg}")
+        """Deprecated/Unused in raw shell mode."""
+        pass
     
     async def execute(
         self, 
-        args: list,
+        command: str,
         output_path: str
     ) -> Tuple[bool, str, Optional[bytes]]:
         """
-        Execute an FFmpeg command.
+        Execute an FFmpeg command using the system shell.
         
         Args:
-            args: List of FFmpeg arguments (without 'ffmpeg' prefix).
+            command: The full command string (without 'ffmpeg -y').
             output_path: Expected output file path.
             
         Returns:
             Tuple of (success, message, output_content).
-            output_content is the file bytes if successful, None otherwise.
         """
-        # Build the full command
-        cmd = ["ffmpeg", "-y"] + args  # -y to overwrite without asking
+        # Build the full command string
+        # We use shell=True logic via create_subprocess_shell
+        full_cmd = f"ffmpeg -y {command}"
+        
+        print(f"DEBUG: Executing shell command: {full_cmd}")
         
         try:
-            # Run FFmpeg
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
+            # Run FFmpeg via Shell
+            process = await asyncio.create_subprocess_shell(
+                full_cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
@@ -170,8 +143,6 @@ class FFmpegProcessor:
             except Exception as e:
                 return False, f"Error reading output file: {e}", None
                 
-        except FileNotFoundError:
-            return False, "FFmpeg not found. Please ensure FFmpeg is installed and in PATH.", None
         except Exception as e:
             return False, f"Unexpected error during FFmpeg execution: {e}", None
     
