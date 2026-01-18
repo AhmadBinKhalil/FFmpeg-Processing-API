@@ -5,6 +5,7 @@ Upload files, process them with FFmpeg commands, and get the results.
 """
 
 import os
+import json
 import mimetypes
 from typing import List, Optional
 from contextlib import asynccontextmanager
@@ -191,10 +192,22 @@ async def process_files(
             except FileNotFoundError as e:
                 raise HTTPException(status_code=500, detail=str(e))
         
+        # Parse command: check if it's a JSON list (for direct subprocess execution)
+        parsed_command = command
+        try:
+            if command.strip().startswith("["):
+                possible_list = json.loads(command)
+                if isinstance(possible_list, list):
+                    parsed_command = possible_list
+                    print("DEBUG: Command parsed as JSON list (Subprocess Mode)")
+        except json.JSONDecodeError as e:
+            print(f"DEBUG: JSON decode failed ({e}). Falling back to Shell Mode.")
+            pass  # Not valid JSON, treat as string (Shell Mode)
+            
         # Parse and validate command
         try:
             args = ffmpeg_processor.parse_command(
-                command, input_files, output_path, 
+                parsed_command, input_files, output_path, 
                 font_path=session_font_path
             )
         except ValueError as e:
@@ -272,9 +285,20 @@ async def process_files_json(
             except FileNotFoundError as e:
                 raise HTTPException(status_code=500, detail=str(e))
         
+        # Parse command: check if it's a JSON list (for direct subprocess execution)
+        parsed_command = command
+        try:
+            if command.strip().startswith("["):
+                possible_list = json.loads(command)
+                if isinstance(possible_list, list):
+                    parsed_command = possible_list
+        except json.JSONDecodeError as e:
+            print(f"DEBUG: JSON decode failed ({e}). Falling back to Shell Mode.")
+            pass
+
         try:
             args = ffmpeg_processor.parse_command(
-                command, input_files, output_path,
+                parsed_command, input_files, output_path,
                 font_path=session_font_path
             )
         except ValueError as e:

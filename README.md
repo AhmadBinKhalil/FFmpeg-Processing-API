@@ -13,7 +13,9 @@ A robust, FastAPI-based service designed to process video and audio files dynami
 - **Safety Checks**: Basic validation to prevent common command injection attacks (see Security section).
 - **Docker Ready**: Fully containerized for easy deployment (runs in POSIX/Linux mode).
 - **Auto-Cleanup**: Temporary sessions are automatically cleaned up after processing.
-- **Raw Shell Mode**: Commands are executed directly via system shell for maximum flexibility (internal use only).
+- **Two Execution Modes**:
+    1.  **Standard Enpoint**: Pass a string for direct shell execution (great for simple commands).
+    2.  **JSON Arguments**: Pass a JSON array to bypass the shell entirely (perfect for quotes/newlines).
 
 > [!TIP]
 > **Docker/Linux Users**: When sending commands via `curl` or valid shell strings, ensure you escape characters according to POSIX standards. Newlines can usually be passed as `\n` or `\\\n` depending on your client's quoting.
@@ -68,7 +70,9 @@ Failed requests return standard HTTP error codes. Successful processing returns 
 
 **Parameters:**
 - `files`: One or more files to upload.
-- `command`: The FFmpeg command template.
+- `command`: The FFmpeg command.
+    - **String**: Executed via system shell (e.g., `-i {input} ...`).
+    - **JSON List**: Executed directly via subprocess (e.g., `["-i", "{input}", ...]`). Recommended for complex text/escaping.
 - `output_extension`: (Optional) Desired output extension (e.g., `.mp4`, `.mp3`).
 
 **Command Placeholders:**
@@ -158,10 +162,18 @@ Failed requests return standard HTTP error codes. Successful processing returns 
 -i {input} -vf "fade=t=in:st=0:d=1" -c:a copy {output}
 ```
 
-**16. Darkened Background with Multiline Text**
-*Uses `eq` to darken video and `drawtext` with `\n` for line breaks.*
+**16. Darkened Background with Multiline Text (Complex)**
+*For complex text with newlines, using **JSON format** is highly recommended to avoid escaping hell.*
+
+**Option A: JSON Format (Recommended)**
+```json
+["-i", "{input}", "-vf", "eq=brightness=-0.2, drawtext=fontfile={font}:text='Line 1\nLine 2':fontcolor=white:fontsize=h/30:x=(w-text_w)/2:y=(h-text_h)/2", "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", "{output}"]
+```
+
+**Option B: Standard Shell String**
+*Requires 4 backslashes (`\\\\n`) to pass a literal newline through the shell.*
 ```bash
--i {input} -vf "eq=brightness=-0.2, drawtext=fontfile={font}:text='Line 1\\nLine 2':fontcolor=white:fontsize=h/30:x=(w-text_w)/2:y=(h-text_h)/2" -an -c:v libx264 -pix_fmt yuv420p {output}
+-i {input} -vf "eq=brightness=-0.2, drawtext=fontfile={font}:text='Line 1\\\\nLine 2':fontcolor=white:fontsize=h/30:x=(w-text_w)/2:y=(h-text_h)/2" -an -c:v libx264 -pix_fmt yuv420p {output}
 ```
 
 ## ⚠️ Security Considerations

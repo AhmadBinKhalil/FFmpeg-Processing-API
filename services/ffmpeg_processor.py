@@ -6,7 +6,7 @@ Handles command parsing, validation, and execution.
 import re
 import asyncio
 import shlex
-from typing import Dict, Tuple, Optional
+from typing import Dict, Tuple, Optional, Union, List
 
 
 class FFmpegProcessor:
@@ -36,25 +36,51 @@ class FFmpegProcessor:
     
     def parse_command(
         self, 
-        command_template: str, 
+        command_template: Union[str, List[str]], 
         input_files: Dict[str, str], 
         output_path: str,
         font_path: str = None
-    ) -> str:
+    ) -> Union[str, List[str]]:
         """
-        Prepare the command string by replacing placeholders.
-        Retains the raw command structure for shell execution.
+        Prepare the command by replacing placeholders.
+        Supports both string (shell) and list (subprocess) templates.
+        """
+        # If list, process as direct arguments (No shell)
+        if isinstance(command_template, list):
+            return self._parse_command_list(command_template, input_files, output_path, font_path)
         
-        Args:
-            command_template: Command template with {input}, {output}, {font}.
-            input_files: Dictionary mapping placeholder names to file paths.
-            output_path: Path for the output file.
-            font_path: Path to the bundled font.
+        # If string, process as shell command
+        return self._parse_command_string(command_template, input_files, output_path, font_path)
+
+    def _parse_command_list(self, template_list: List[str], input_files: Dict[str, str], output_path: str, font_path: str) -> List[str]:
+        """Handle list-based argument parsing."""
+        args = []
+        for arg in template_list:
+            # Simple placeholder replacement without quoting/escaping logic (arguments are raw)
+            new_arg = arg
+            new_arg = new_arg.replace("{output}", output_path)
             
-        Returns:
-            The formatted command string.
-        """
-        # Check for blocked arguments (basic sanity check only)
+            if font_path and "{font}" in new_arg:
+                # For direct subprocess, verify if any FFmpeg-specific escaping is needed for the PATH
+                # Usually forward slashes are safest for FFmpeg
+                escaped_font = font_path.replace("\\", "/")
+                # Windows drive letter escaping for filters might still be needed by FFmpeg itself?
+                # But since we are bypassing shell, we pass valid path. 
+                # FFmpeg filter parser handle paths differently. Let's stick to simple forward slashes.
+                new_arg = new_arg.replace("{font}", escaped_font)
+            
+            for placeholder, file_path in input_files.items():
+                new_arg = new_arg.replace(f"{{{placeholder}}}", file_path)
+                
+            args.append(new_arg)
+            
+        # Validate args
+        self._validate_args(args)
+        return args
+
+    def _parse_command_string(self, command_template: str, input_files: Dict[str, str], output_path: str, font_path: str) -> str:
+        """Handle string-based shell command parsing."""
+        # Check for blocked arguments
         for arg in self.BLOCKED_ARGS:
             if arg in command_template:
                 raise ValueError(f"Blocked argument: {arg}")
@@ -70,12 +96,10 @@ class FFmpegProcessor:
         
         # Replace font placeholder
         if font_path and "{font}" in command:
-            # For shell execution, simple quoting usually works best
             command = command.replace("{font}", quote_path(font_path))
         
         # Replace input placeholders
         for placeholder, file_path in input_files.items():
-            # Replace {input} with safely quoted path
             command = command.replace(f"{{{placeholder}}}", quote_path(file_path))
         
         # Check for unreplaced placeholders
@@ -86,65 +110,83 @@ class FFmpegProcessor:
         return command
     
     def _validate_args(self, args: list) -> None:
-        """Deprecated/Unused in raw shell mode."""
-        pass
+        """Validate list arguments."""
+        for arg in args:
+             for blocked in self.BLOCKED_ARGS:
+                 if blocked in arg:
+                     raise ValueError(f"Blocked argument: {blocked}")
     
     async def execute(
         self, 
-        command: str,
+        command: Union[str, List[str]],
         output_path: str
     ) -> Tuple[bool, str, Optional[bytes]]:
         """
-        Execute an FFmpeg command using the system shell.
+        Execute an FFmpeg command.
         
         Args:
-            command: The full command string (without 'ffmpeg -y').
+            command: Command string (shell execution) OR list of arguments (subprocess execution).
             output_path: Expected output file path.
-            
-        Returns:
-            Tuple of (success, message, output_content).
         """
-        # Build the full command string
-        # We use shell=True logic via create_subprocess_shell
-        full_cmd = f"ffmpeg -y {command}"
+        if isinstance(command, list):
+             return await self._execute_subprocess(command, output_path)
+        else:
+             return await self._execute_shell(command, output_path)
+
+    async def _execute_subprocess(self, args: List[str], output_path: str) -> Tuple[bool, str, Optional[bytes]]:
+        """Execute using asyncio.create_subprocess_exec (No Shell)."""
+        cmd = ["ffmpeg", "-y"] + args
+        print(f"DEBUG: Executing subprocess: {cmd}")
         
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            return await self._handle_process(process, output_path)
+        except Exception as e:
+            return False, f"Unexpected error during FFmpeg execution: {e}", None
+
+    async def _execute_shell(self, command_str: str, output_path: str) -> Tuple[bool, str, Optional[bytes]]:
+        """Execute using asyncio.create_subprocess_shell."""
+        full_cmd = f"ffmpeg -y {command_str}"
         print(f"DEBUG: Executing shell command: {full_cmd}")
         
         try:
-            # Run FFmpeg via Shell
             process = await asyncio.create_subprocess_shell(
                 full_cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
-            
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(),
-                    timeout=self.timeout
-                )
-            except asyncio.TimeoutError:
-                process.kill()
-                await process.wait()
-                return False, f"FFmpeg command timed out after {self.timeout} seconds", None
-            
-            # Check if command succeeded
-            if process.returncode != 0:
-                error_msg = stderr.decode("utf-8", errors="replace")
-                return False, f"FFmpeg error (exit code {process.returncode}): {error_msg}", None
-            
-            # Read output file
-            try:
-                with open(output_path, "rb") as f:
-                    output_content = f.read()
-                return True, "Processing completed successfully", output_content
-            except FileNotFoundError:
-                return False, "FFmpeg completed but output file was not created", None
-            except Exception as e:
-                return False, f"Error reading output file: {e}", None
-                
+            return await self._handle_process(process, output_path)
         except Exception as e:
             return False, f"Unexpected error during FFmpeg execution: {e}", None
+
+    async def _handle_process(self, process, output_path):
+        """Common process handling logic."""
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=self.timeout
+            )
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            return False, f"FFmpeg command timed out after {self.timeout} seconds", None
+        
+        if process.returncode != 0:
+            error_msg = stderr.decode("utf-8", errors="replace")
+            return False, f"FFmpeg error (exit code {process.returncode}): {error_msg}", None
+        
+        try:
+            with open(output_path, "rb") as f:
+                output_content = f.read()
+            return True, "Processing completed successfully", output_content
+        except FileNotFoundError:
+            return False, "FFmpeg completed but output file was not created", None
+        except Exception as e:
+            return False, f"Error reading output file: {e}", None
     
     def detect_output_extension(self, command_template: str) -> str:
         """
