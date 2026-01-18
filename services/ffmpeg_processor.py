@@ -87,8 +87,9 @@ class FFmpegProcessor:
         
         # Parse into arguments - use posix=True for correct escaping in Linux/Docker
         try:
+            print(f"DEBUG: Command before shlex (repr): {repr(command)}")
             args = shlex.split(command, posix=True)
-            # posix=True automatically handles quote stripping and escapes
+            print(f"DEBUG: Args after shlex: {args}")
         except ValueError as e:
             raise ValueError(f"Invalid command syntax: {e}")
         

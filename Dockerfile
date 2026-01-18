@@ -1,5 +1,8 @@
 FROM python:3.11-slim
 
+# Prevent Python from buffering stdout/stderr
+ENV PYTHONUNBUFFERED=1
+
 # Install FFmpeg
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \

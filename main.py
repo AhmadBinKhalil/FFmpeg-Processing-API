@@ -160,6 +160,10 @@ async def process_files(
     # Create session directory
     session_dir = file_manager.create_session_dir()
     
+    # DEBUG: Log raw command
+    print(f"DEBUG: Raw command received (repr): {repr(command)}")
+    print(f"DEBUG: Raw command received (str): {command}")
+    
     try:
         # Save uploaded files
         input_files = await file_manager.save_upload_files(files, session_dir)
