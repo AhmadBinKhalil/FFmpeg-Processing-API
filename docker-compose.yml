@@ -1,8 +1,6 @@
 services:
   ffmpeg-api:
     build: .
-    ports:
-      - "8000:8000"
     environment:
       - TEMP_DIR=/tmp
       - MAX_FILE_SIZE_MB=500
