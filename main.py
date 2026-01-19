@@ -7,11 +7,12 @@ Upload files, process them with FFmpeg commands, and get the results.
 import os
 import json
 import mimetypes
-from typing import List, Optional
+from typing import List, Optional, Union
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.responses import Response, JSONResponse
+from fastapi.responses import Response, JSONResponse, FileResponse
+from starlette.background import BackgroundTask
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -44,7 +45,7 @@ class Base64File(BaseModel):
 
 class Base64ProcessRequest(BaseModel):
     files: List[Base64File]
-    command: str  # Or List[str], but handled as flexible in logic
+    command: Union[str, List[str]]  # Supports both string and list of strings
     output_extension: Optional[str] = None
     execution_mode: str = "auto"
 
