@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import Response, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from services.file_manager import FileManager
 from services.ffmpeg_processor import FFmpegProcessor
@@ -34,6 +35,18 @@ VALID_EXTENSIONS = {
     "mp3", "wav", "aac", "flac", "ogg", "m4a", "wma",  # Audio
     "gif", "png", "jpg", "jpeg", "webp", "bmp", "tiff"  # Image
 }
+
+
+# Pydantic Models for Base64 Endpoint
+class Base64File(BaseModel):
+    filename: str
+    content: str  # Base64 encoded content
+
+class Base64ProcessRequest(BaseModel):
+    files: List[Base64File]
+    command: str  # Or List[str], but handled as flexible in logic
+    output_extension: Optional[str] = None
+    execution_mode: str = "auto"
 
 # Initialize services
 file_manager = FileManager(base_temp_dir=TEMP_DIR)
